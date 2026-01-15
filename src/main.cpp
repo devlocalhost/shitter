@@ -17,7 +17,8 @@ NimBLECharacteristic* input;
 WebServer webServer(80);
 IPAddress apIP;
 
-static const uint8_t VOLUME_UP = 0xE9;
+static const uint8_t VOLUME_UP_KEY = 0xE9;
+static const uint8_t VOLUME_DOWN_KEY = 0xEA;
 bool wasConnected = false;
 
 // used for non blocking webTakePhotoEveryX
@@ -25,11 +26,13 @@ bool repeatActive = false;
 int repeatInterval = 0;
 unsigned long lastShoot = 0;
 
+// sets the rgb led
 void setLED(uint8_t r, uint8_t g, uint8_t b) {
     strip.setPixelColor(0, strip.Color(r, g, b));
     strip.show();
 }
 
+// pulses (turns on for x ms then off) the rgb led
 void pulseLED(uint8_t r, uint8_t g, uint8_t b, int ms = 50) {
     setLED(r, g, b);
     delay(ms);
@@ -56,13 +59,14 @@ void checkConnectionState() {
     }
 }
 
+// send the key
 void sendVolumeKey() {
     if (!bleServer->getConnectedCount()) {
         pulseLED(255, 0, 0, 100);
         return;
-    } // red red blink if not connected
+    }
 
-    uint16_t msg = VOLUME_UP;
+    uint16_t msg = VOLUME_DOWN_KEY;
     input->setValue((uint8_t*)&msg, 2);
     input->notify();
 
@@ -72,11 +76,13 @@ void sendVolumeKey() {
     input->setValue((uint8_t*)&msg, 2);
     input->notify();
 
+    // blink the rgb led, feedback basically
     pulseLED(255, 255, 255, 400);
     delay(300);
     pulseLED(255, 255, 255, 50);
 }
 
+// take a photo with a delay (timer)
 void takePhotoWithDelay(int delaySec = 0) {
     if (delaySec < 1) {
         return; // invalid value
@@ -92,6 +98,7 @@ void takePhotoWithDelay(int delaySec = 0) {
     sendVolumeKey();
 }
 
+// takes a photo every x seconds
 void takePhotoEveryX(int shootDelay = 0) {
     if (shootDelay < 1) {
         return; // invalid value
@@ -110,21 +117,8 @@ void takePhotoEveryX(int shootDelay = 0) {
     }
 }
 
-void webSendVolumeKey() {
-    sendVolumeKey();
-    webServer.send(200, "text/plain", "webSendVolumeKey | OK");
-}
-
-void webTakePhotoWithDelay() {
-    if (webServer.hasArg("delay")) {
-        takePhotoWithDelay(webServer.arg("delay").toInt());
-    }
-
-    webServer.send(200, "text/plain", "webTakePhotoWithDelay | OK");
-}
-
 void setup() {
-    delay(2000);
+    delay(2000); // idk why i added this but im keeping it
 
     strip.begin();
     strip.setBrightness(60);
@@ -163,6 +157,7 @@ void setup() {
     adv->addServiceUUID(hid->getHidService()->getUUID());
     adv->start();
 
+    // more feedback
     pulseLED(255, 0, 0, 100);
     delay(125);
     pulseLED(0, 255, 0, 100);
@@ -173,29 +168,27 @@ void setup() {
     WiFi.softAP("shitteremote");
     apIP = WiFi.softAPIP();
 
+    // web route
     webServer.on("/shoot", []() {
         if (webServer.hasArg("delay")) {
-            takePhotoWithDelay(webServer.arg("delay").toInt()); // TODO: check if value is valid
-            webServer.send(200, "text/plain", "webTakePhotoWithDelay | OK");
+            takePhotoWithDelay(webServer.arg("delay").toInt());
+            webServer.send(200, "text/plain", "webTakePhotoWithDelay | OK\n");
         } else if (webServer.hasArg("repeatEvery")) {
             repeatInterval = webServer.arg("repeatEvery").toInt();
-            
-            if (repeatInterval > 0) {
-                repeatActive = true;
-                lastShoot = millis();
+            repeatActive = true;
+            lastShoot = millis();
                 
-                webServer.send(200, "text/plain", "webTakePhotoEveryX | START");
-            } else {
-                webServer.send(400, "text/plain", "webTakePhotoEveryX | Invalid value");
-            }
+            webServer.send(200, "text/plain", "webTakePhotoEveryX | START\n");
         } else {
             sendVolumeKey();
-            webServer.send(200, "text/plain", "webSendVolumeKey | OK");
+            webServer.send(200, "text/plain", "webSendVolumeKey | OK\n");
         }
     });
+
+    // this is use(ful)d only for repeatEvery
     webServer.on("/cancel", []() {
         repeatActive = false;
-        webServer.send(200, "text/plain", "cancel | STOP");
+        webServer.send(200, "text/plain", "cancel | STOP\n");
     });
     
     webServer.begin();
