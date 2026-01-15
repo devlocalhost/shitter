@@ -19,6 +19,8 @@ IPAddress apIP;
 
 static const uint8_t VOLUME_UP = 0xE9;
 bool wasConnected = false;
+
+// used for non blocking webTakePhotoEveryX
 bool repeatActive = false;
 int repeatInterval = 0;
 unsigned long lastShoot = 0;
@@ -58,7 +60,7 @@ void sendVolumeKey() {
     if (!bleServer->getConnectedCount()) {
         pulseLED(255, 0, 0, 100);
         return;
-    }
+    } // red red blink if not connected
 
     uint16_t msg = VOLUME_UP;
     input->setValue((uint8_t*)&msg, 2);
@@ -128,7 +130,7 @@ void setup() {
     strip.setBrightness(60);
     strip.show();
 
-    NimBLEDevice::init("shitter");
+    NimBLEDevice::init("shitter"); // name
     bleServer = NimBLEDevice::createServer();
 
     hid = new NimBLEHIDDevice(bleServer);
@@ -167,6 +169,7 @@ void setup() {
     delay(125);
     pulseLED(0, 0, 255, 100);
 
+    // set up hotspot
     WiFi.softAP("shitteremote");
     apIP = WiFi.softAPIP();
 
@@ -202,6 +205,7 @@ void loop() {
     checkConnectionState();
     webServer.handleClient();
 
+    // used for non blocking webTakePhotoEveryX
     if (repeatActive && millis() - lastShoot >= (unsigned long)repeatInterval * 1000) {
         sendVolumeKey();
         lastShoot = millis();
