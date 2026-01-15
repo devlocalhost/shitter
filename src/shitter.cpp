@@ -19,6 +19,9 @@ IPAddress apIP;
 
 static const uint8_t VOLUME_UP = 0xE9;
 bool wasConnected = false;
+bool repeatActive = false;
+int repeatInterval = 0;
+unsigned long lastShoot = 0;
 
 void setLED(uint8_t r, uint8_t g, uint8_t b) {
     strip.setPixelColor(0, strip.Color(r, g, b));
@@ -29,10 +32,6 @@ void pulseLED(uint8_t r, uint8_t g, uint8_t b, int ms = 50) {
     setLED(r, g, b);
     delay(ms);
     setLED(0, 0, 0);
-}
-
-void flushSerial() {
-    while (Serial.available()) Serial.read();
 }
 
 void checkConnectionState() {
@@ -52,13 +51,6 @@ void checkConnectionState() {
         }
         wasConnected = false;
         NimBLEDevice::getAdvertising()->start();
-    }
-}
-
-void waitForSerialInput() {
-    while (!Serial.available()) {
-        checkConnectionState();
-        delay(50);
     }
 }
 
@@ -83,37 +75,13 @@ void sendVolumeKey() {
     pulseLED(255, 255, 255, 50);
 }
 
-void clearScreen() {
-    Serial.write(27);
-    Serial.print("[2J");
-    Serial.write(27);
-    Serial.print("[H");
-}
-
-void printMenu() {
-    clearScreen();
-
-    Serial.println("Commands:");
-    Serial.println("       d: photo with delay");
-    Serial.println("       x: photo every x seconds");
-    Serial.println("   enter: take photo now");
-}
-
-void takePhotoWithDelay() {
-    Serial.println("Enter delay in seconds:");
-    waitForSerialInput();
-
-    int delaySec = Serial.parseInt();
-    flushSerial();
-
+void takePhotoWithDelay(int delaySec = 0) {
     if (delaySec < 1) {
-        Serial.println("Invalid value");
-        return;
+        return; // invalid value
     }
 
-    Serial.printf("Taking photo in %d seconds...\n", delaySec);
-
     unsigned long start = millis();
+
     while (millis() - start < (unsigned long)delaySec * 1000) {
         checkConnectionState();
         delay(50);
@@ -122,29 +90,14 @@ void takePhotoWithDelay() {
     sendVolumeKey();
 }
 
-void takePhotoEveryX() {
-    Serial.println("Enter delay in seconds:");
-    waitForSerialInput();
-
-    int shootDelay = Serial.parseInt();
-    flushSerial();
-
+void takePhotoEveryX(int shootDelay = 0) {
     if (shootDelay < 1) {
-        Serial.println("Invalid value");
-        return;
+        return; // invalid value
     }
-
-    Serial.printf("Taking photos every %d seconds. Enter 'e' to stop\n", shootDelay);
-
+    
     unsigned long last = 0;
     while (true) {
         checkConnectionState();
-
-        if (Serial.available()) {
-            char c = Serial.read();
-            flushSerial();
-            if (c == 'e' || c == 'E') break;
-        }
 
         if (millis() - last >= (unsigned long)shootDelay * 1000) {
             sendVolumeKey();
@@ -155,13 +108,20 @@ void takePhotoEveryX() {
     }
 }
 
-void handleShoot() {
+void webSendVolumeKey() {
     sendVolumeKey();
-    webServer.send(200, "text/plain", "OK");
+    webServer.send(200, "text/plain", "webSendVolumeKey | OK");
+}
+
+void webTakePhotoWithDelay() {
+    if (webServer.hasArg("delay")) {
+        takePhotoWithDelay(webServer.arg("delay").toInt());
+    }
+
+    webServer.send(200, "text/plain", "webTakePhotoWithDelay | OK");
 }
 
 void setup() {
-    Serial.begin(115200);
     delay(2000);
 
     strip.begin();
@@ -210,42 +170,40 @@ void setup() {
     WiFi.softAP("shitteremote");
     apIP = WiFi.softAPIP();
 
-    webServer.on("/shoot", handleShoot);
+    webServer.on("/shoot", []() {
+        if (webServer.hasArg("delay")) {
+            takePhotoWithDelay(webServer.arg("delay").toInt()); // TODO: check if value is valid
+            webServer.send(200, "text/plain", "webTakePhotoWithDelay | OK");
+        } else if (webServer.hasArg("repeatEvery")) {
+            repeatInterval = webServer.arg("repeatEvery").toInt();
+            
+            if (repeatInterval > 0) {
+                repeatActive = true;
+                lastShoot = millis();
+                
+                webServer.send(200, "text/plain", "webTakePhotoEveryX | START");
+            } else {
+                webServer.send(400, "text/plain", "webTakePhotoEveryX | Invalid value");
+            }
+        } else {
+            sendVolumeKey();
+            webServer.send(200, "text/plain", "webSendVolumeKey | OK");
+        }
+    });
+    webServer.on("/cancel", []() {
+        repeatActive = false;
+        webServer.send(200, "text/plain", "cancel | STOP");
+    });
+    
     webServer.begin();
-
-    printMenu();
 }
 
 void loop() {
     checkConnectionState();
     webServer.handleClient();
 
-    if (!Serial.available()) {
-        delay(10);
-        return;
+    if (repeatActive && millis() - lastShoot >= (unsigned long)repeatInterval * 1000) {
+        sendVolumeKey();
+        lastShoot = millis();
     }
-
-    char cmd = Serial.read();
-    flushSerial();
-
-    switch (cmd) {
-        case 'd':
-            takePhotoWithDelay();
-            break;
-
-        case 'x':
-            takePhotoEveryX();
-            break;
-
-        case '\n':
-        case '\r':
-            sendVolumeKey();
-            break;
-
-        default:
-            Serial.println("Unknown command");
-            break;
-    }
-
-    printMenu();
 }
