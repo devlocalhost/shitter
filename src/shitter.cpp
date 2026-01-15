@@ -1,3 +1,6 @@
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <WebServer.h>
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
 #include <Adafruit_NeoPixel.h>
@@ -7,9 +10,12 @@
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-NimBLEServer* server;
+NimBLEServer* bleServer;
 NimBLEHIDDevice* hid;
 NimBLECharacteristic* input;
+
+WebServer webServer(80);
+IPAddress apIP;
 
 static const uint8_t VOLUME_UP = 0xE9;
 bool wasConnected = false;
@@ -30,7 +36,7 @@ void flushSerial() {
 }
 
 void checkConnectionState() {
-    bool isConnected = (server->getConnectedCount() > 0);
+    bool isConnected = (bleServer->getConnectedCount() > 0);
 
     if (isConnected && !wasConnected) {
         for (int i = 0; i < 3; i++) {
@@ -57,7 +63,7 @@ void waitForSerialInput() {
 }
 
 void sendVolumeKey() {
-    if (!server->getConnectedCount()) {
+    if (!bleServer->getConnectedCount()) {
         pulseLED(255, 0, 0, 100);
         return;
     }
@@ -86,6 +92,7 @@ void clearScreen() {
 
 void printMenu() {
     clearScreen();
+
     Serial.println("Commands:");
     Serial.println("       d: photo with delay");
     Serial.println("       x: photo every x seconds");
@@ -148,6 +155,11 @@ void takePhotoEveryX() {
     }
 }
 
+void handleShoot() {
+    sendVolumeKey();
+    webServer.send(200, "text/plain", "OK");
+}
+
 void setup() {
     Serial.begin(115200);
     delay(2000);
@@ -157,9 +169,9 @@ void setup() {
     strip.show();
 
     NimBLEDevice::init("shitter");
-    server = NimBLEDevice::createServer();
+    bleServer = NimBLEDevice::createServer();
 
-    hid = new NimBLEHIDDevice(server);
+    hid = new NimBLEHIDDevice(bleServer);
     input = hid->getInputReport(1);
 
     hid->setManufacturer("shittr");
@@ -195,11 +207,18 @@ void setup() {
     delay(125);
     pulseLED(0, 0, 255, 100);
 
+    WiFi.softAP("shitteremote");
+    apIP = WiFi.softAPIP();
+
+    webServer.on("/shoot", handleShoot);
+    webServer.begin();
+
     printMenu();
 }
 
 void loop() {
     checkConnectionState();
+    webServer.handleClient();
 
     if (!Serial.available()) {
         delay(10);
