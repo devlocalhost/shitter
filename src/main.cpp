@@ -15,7 +15,6 @@ NimBLEHIDDevice* hid;
 NimBLECharacteristic* input;
 
 WebServer webServer(80);
-IPAddress apIP;
 
 static const uint8_t VOLUME_UP_KEY = 0xE9;
 static const uint8_t VOLUME_DOWN_KEY = 0xEA;
@@ -166,30 +165,41 @@ void setup() {
 
     // set up hotspot
     WiFi.softAP("shitteremote");
-    apIP = WiFi.softAPIP();
 
-    // web route
-    webServer.on("/shoot", []() {
-        if (webServer.hasArg("delay")) {
-            takePhotoWithDelay(webServer.arg("delay").toInt());
-            webServer.send(200, "text/plain", "webTakePhotoWithDelay | OK\n");
-        } else if (webServer.hasArg("repeatEvery")) {
-            repeatInterval = webServer.arg("repeatEvery").toInt();
-            repeatActive = true;
-            lastShoot = millis();
-                
-            webServer.send(200, "text/plain", "webTakePhotoEveryX | START\n");
-        } else {
-            sendVolumeKey();
-            webServer.send(200, "text/plain", "webSendVolumeKey | OK\n");
-        }
+    webServer.on("/", []() {
+        webServer.send(200, "text/plain", "Routes:\n /\t\t\t: this\n /shoot\t\t\t: take a single photo\n /takePhotoWithDelay\t: take a photo after x seconds\n /takePhotoEveryX\t: take a photo every x seconds\n /cancel\t\t: stop takePhotoEveryX\n");
     });
 
-    // this is use(ful)d only for repeatEvery
+    webServer.on("/shoot", []() {
+        sendVolumeKey();
+        webServer.send(200, "text/plain", "sendVolumeKey | OK\n");
+    });
+
+    webServer.on("/takePhotoWithDelay", []() {
+        takePhotoWithDelay(webServer.arg("delay").toInt());
+        webServer.send(200, "text/plain", "takePhotoWithDelay | OK\n");
+    });
+
+    webServer.on("/takePhotoEveryX", []() {
+        repeatInterval = webServer.arg("repeatEvery").toInt();
+        repeatActive = true;
+        lastShoot = millis();
+            
+        webServer.send(200, "text/plain", "takePhotoEveryX | START\n");
+
+        // code above looks confusing as shit right?
+        // well, the magic is happening in the loop
+        // function at the bottom
+    });
+
+    // this is use(ful)d only for takePhotoEveryX
     webServer.on("/cancel", []() {
         repeatActive = false;
-        webServer.send(200, "text/plain", "cancel | STOP\n");
+        webServer.send(200, "text/plain", "takePhotoEveryX | STOP\n");
     });
+
+    // webServer.on("/", []() {
+    // });
     
     webServer.begin();
 }
@@ -198,7 +208,7 @@ void loop() {
     checkConnectionState();
     webServer.handleClient();
 
-    // used for non blocking webTakePhotoEveryX
+    // very important part for takePhotoEveryX and the route
     if (repeatActive && millis() - lastShoot >= (unsigned long)repeatInterval * 1000) {
         sendVolumeKey();
         lastShoot = millis();
