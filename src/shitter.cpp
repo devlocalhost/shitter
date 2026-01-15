@@ -15,218 +15,218 @@ static const uint8_t VOLUME_UP = 0xE9;
 bool wasConnected = false;
 
 void setLED(uint8_t r, uint8_t g, uint8_t b) {
-  strip.setPixelColor(0, strip.Color(r, g, b));
-  strip.show();
+    strip.setPixelColor(0, strip.Color(r, g, b));
+    strip.show();
 }
 
 void pulseLED(uint8_t r, uint8_t g, uint8_t b, int ms = 50) {
-  setLED(r, g, b);
-  delay(ms);
-  setLED(0, 0, 0);
+    setLED(r, g, b);
+    delay(ms);
+    setLED(0, 0, 0);
 }
 
 void flushSerial() {
-  while (Serial.available()) Serial.read();
+    while (Serial.available()) Serial.read();
 }
 
 void checkConnectionState() {
-  bool isConnected = (server->getConnectedCount() > 0);
+    bool isConnected = (server->getConnectedCount() > 0);
 
-  if (isConnected && !wasConnected) {
-    for (int i = 0; i < 3; i++) {
-      pulseLED(0, 0, 255, 100);
-      delay(125);
+    if (isConnected && !wasConnected) {
+        for (int i = 0; i < 3; i++) {
+            pulseLED(0, 0, 255, 100);
+            delay(125);
+        }
+        wasConnected = true;
     }
-    wasConnected = true;
-  }
-  else if (!isConnected && wasConnected) {
-    for (int i = 0; i < 3; i++) {
-      pulseLED(255, 0, 0, 100);
-      delay(125);
+    else if (!isConnected && wasConnected) {
+        for (int i = 0; i < 3; i++) {
+            pulseLED(255, 0, 0, 100);
+            delay(125);
+        }
+        wasConnected = false;
+        NimBLEDevice::getAdvertising()->start();
     }
-    wasConnected = false;
-    NimBLEDevice::getAdvertising()->start();
-  }
 }
 
 void waitForSerialInput() {
-  while (!Serial.available()) {
-    checkConnectionState();
-    delay(50);
-  }
+    while (!Serial.available()) {
+        checkConnectionState();
+        delay(50);
+    }
 }
 
 void sendVolumeKey() {
-  if (!server->getConnectedCount()) {
-    pulseLED(255, 0, 0, 100);
-    return;
-  }
+    if (!server->getConnectedCount()) {
+        pulseLED(255, 0, 0, 100);
+        return;
+    }
 
-  uint16_t msg = VOLUME_UP;
-  input->setValue((uint8_t*)&msg, 2);
-  input->notify();
+    uint16_t msg = VOLUME_UP;
+    input->setValue((uint8_t*)&msg, 2);
+    input->notify();
 
-  delay(100);
+    delay(100);
 
-  msg = 0;
-  input->setValue((uint8_t*)&msg, 2);
-  input->notify();
+    msg = 0;
+    input->setValue((uint8_t*)&msg, 2);
+    input->notify();
 
-  pulseLED(255, 255, 255, 400);
-  delay(300);
-  pulseLED(255, 255, 255, 50);
+    pulseLED(255, 255, 255, 400);
+    delay(300);
+    pulseLED(255, 255, 255, 50);
 }
 
 void clearScreen() {
-  Serial.write(27);
-  Serial.print("[2J");
-  Serial.write(27);
-  Serial.print("[H");
+    Serial.write(27);
+    Serial.print("[2J");
+    Serial.write(27);
+    Serial.print("[H");
 }
 
 void printMenu() {
-  clearScreen();
-  Serial.println("Commands:");
-  Serial.println("       d: photo with delay");
-  Serial.println("       x: photo every x seconds");
-  Serial.println("   enter: take photo now");
+    clearScreen();
+    Serial.println("Commands:");
+    Serial.println("       d: photo with delay");
+    Serial.println("       x: photo every x seconds");
+    Serial.println("   enter: take photo now");
 }
 
 void takePhotoWithDelay() {
-  Serial.println("Enter delay in seconds:");
-  waitForSerialInput();
+    Serial.println("Enter delay in seconds:");
+    waitForSerialInput();
 
-  int delaySec = Serial.parseInt();
-  flushSerial();
+    int delaySec = Serial.parseInt();
+    flushSerial();
 
-  if (delaySec < 1) {
-    Serial.println("Invalid value");
-    return;
-  }
+    if (delaySec < 1) {
+        Serial.println("Invalid value");
+        return;
+    }
 
-  Serial.printf("Taking photo in %d seconds...\n", delaySec);
+    Serial.printf("Taking photo in %d seconds...\n", delaySec);
 
-  unsigned long start = millis();
-  while (millis() - start < (unsigned long)delaySec * 1000) {
-    checkConnectionState();
-    delay(50);
-  }
+    unsigned long start = millis();
+    while (millis() - start < (unsigned long)delaySec * 1000) {
+        checkConnectionState();
+        delay(50);
+    }
 
-  sendVolumeKey();
+    sendVolumeKey();
 }
 
 void takePhotoEveryX() {
-  Serial.println("Enter delay in seconds:");
-  waitForSerialInput();
+    Serial.println("Enter delay in seconds:");
+    waitForSerialInput();
 
-  int shootDelay = Serial.parseInt();
-  flushSerial();
+    int shootDelay = Serial.parseInt();
+    flushSerial();
 
-  if (shootDelay < 1) {
-    Serial.println("Invalid value");
-    return;
-  }
-
-  Serial.printf("Taking photos every %d seconds. Enter 'e' to stop\n", shootDelay);
-
-  unsigned long last = 0;
-  while (true) {
-    checkConnectionState();
-
-    if (Serial.available()) {
-      char c = Serial.read();
-      flushSerial();
-      if (c == 'e' || c == 'E') break;
+    if (shootDelay < 1) {
+        Serial.println("Invalid value");
+        return;
     }
 
-    if (millis() - last >= (unsigned long)shootDelay * 1000) {
-      sendVolumeKey();
-      last = millis();
-    }
+    Serial.printf("Taking photos every %d seconds. Enter 'e' to stop\n", shootDelay);
 
-    delay(50);
-  }
+    unsigned long last = 0;
+    while (true) {
+        checkConnectionState();
+
+        if (Serial.available()) {
+            char c = Serial.read();
+            flushSerial();
+            if (c == 'e' || c == 'E') break;
+        }
+
+        if (millis() - last >= (unsigned long)shootDelay * 1000) {
+            sendVolumeKey();
+            last = millis();
+        }
+
+        delay(50);
+    }
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(2000);
+    Serial.begin(115200);
+    delay(2000);
 
-  strip.begin();
-  strip.setBrightness(60);
-  strip.show();
+    strip.begin();
+    strip.setBrightness(60);
+    strip.show();
 
-  NimBLEDevice::init("shitter");
-  server = NimBLEDevice::createServer();
+    NimBLEDevice::init("shitter");
+    server = NimBLEDevice::createServer();
 
-  hid = new NimBLEHIDDevice(server);
-  input = hid->getInputReport(1);
+    hid = new NimBLEHIDDevice(server);
+    input = hid->getInputReport(1);
 
-  hid->setManufacturer("shittr");
-  hid->setPnp(0x02, 0xe502, 0xa111, 0x0210);
-  hid->setHidInfo(0x00, 0x01);
+    hid->setManufacturer("shittr");
+    hid->setPnp(0x02, 0xe502, 0xa111, 0x0210);
+    hid->setHidInfo(0x00, 0x01);
 
-  const uint8_t reportMap[] = {
-    0x05, 0x0C,
-    0x09, 0x01,
-    0xA1, 0x01,
-    0x85, 0x01,
-    0x19, 0x00,
-    0x2A, 0xFF, 0x00,
-    0x15, 0x00,
-    0x26, 0xFF, 0x03,
-    0x75, 0x10,
-    0x95, 0x01,
-    0x81, 0x00,
-    0xC0
-  };
+    const uint8_t reportMap[] = {
+        0x05, 0x0C,
+        0x09, 0x01,
+        0xA1, 0x01,
+        0x85, 0x01,
+        0x19, 0x00,
+        0x2A, 0xFF, 0x00,
+        0x15, 0x00,
+        0x26, 0xFF, 0x03,
+        0x75, 0x10,
+        0x95, 0x01,
+        0x81, 0x00,
+        0xC0
+    };
 
-  hid->setReportMap((uint8_t*)reportMap, sizeof(reportMap));
-  hid->startServices();
+    hid->setReportMap((uint8_t*)reportMap, sizeof(reportMap));
+    hid->startServices();
 
-  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-  adv->setAppearance(0x03C1);
-  adv->addServiceUUID(hid->getHidService()->getUUID());
-  adv->start();
+    NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+    adv->setAppearance(0x03C1);
+    adv->addServiceUUID(hid->getHidService()->getUUID());
+    adv->start();
 
-  pulseLED(255, 0, 0, 100);
-  delay(125);
-  pulseLED(0, 255, 0, 100);
-  delay(125);
-  pulseLED(0, 0, 255, 100);
+    pulseLED(255, 0, 0, 100);
+    delay(125);
+    pulseLED(0, 255, 0, 100);
+    delay(125);
+    pulseLED(0, 0, 255, 100);
 
-  printMenu();
+    printMenu();
 }
 
 void loop() {
-  checkConnectionState();
+    checkConnectionState();
 
-  if (!Serial.available()) {
-    delay(10);
-    return;
-  }
+    if (!Serial.available()) {
+        delay(10);
+        return;
+    }
 
-  char cmd = Serial.read();
-  flushSerial();
+    char cmd = Serial.read();
+    flushSerial();
 
-  switch (cmd) {
-    case 'd':
-      takePhotoWithDelay();
-      break;
+    switch (cmd) {
+        case 'd':
+            takePhotoWithDelay();
+            break;
 
-    case 'x':
-      takePhotoEveryX();
-      break;
+        case 'x':
+            takePhotoEveryX();
+            break;
 
-    case '\n':
-    case '\r':
-      sendVolumeKey();
-      break;
+        case '\n':
+        case '\r':
+            sendVolumeKey();
+            break;
 
-    default:
-      Serial.println("Unknown command");
-      break;
-  }
+        default:
+            Serial.println("Unknown command");
+            break;
+    }
 
-  printMenu();
+    printMenu();
 }
