@@ -69,15 +69,15 @@ void sendVolumeKey() {
     input->setValue((uint8_t*)&msg, 2);
     input->notify();
 
-    delay(100);
+    delay(50);
 
     msg = 0;
     input->setValue((uint8_t*)&msg, 2);
     input->notify();
 
     // blink the rgb led, feedback basically
-    pulseLED(255, 255, 255, 400);
-    delay(300);
+    // pulseLED(255, 255, 255, 400);
+    // delay(300);
     pulseLED(255, 255, 255, 50);
 }
 
@@ -117,8 +117,8 @@ void takePhotoEveryX(int shootDelay = 0) {
 }
 
 void setup() {
-    delay(2000); // idk why i added this but im keeping it
-
+    pinMode(0, INPUT_PULLUP); // this is the boot button, gpio0
+    
     strip.begin();
     strip.setBrightness(60);
     strip.show();
@@ -167,7 +167,7 @@ void setup() {
     WiFi.softAP("shitteremote");
 
     webServer.on("/", []() {
-        webServer.send(200, "text/plain", "Routes:\n /\t\t\t: this\n /shoot\t\t\t: take a single photo\n /takePhotoWithDelay\t: take a photo after x seconds\n /takePhotoEveryX\t: take a photo every x seconds\n /cancel\t\t: stop takePhotoEveryX\n");
+        webServer.send(200, "text/plain", "Routes:\n /\t\t\t: this\n /shoot\t\t\t: take a single photo\n /takePhotoWithDelay\t: take a photo after x seconds\n /takePhotoEveryX\t: take a photo every x seconds\n /cancel\t\t: stop takePhotoEveryX\n\nPhoto can also be taken by pressing\nthe BOOT button on board.\n");
     });
 
     webServer.on("/shoot", []() {
@@ -212,5 +212,12 @@ void loop() {
     if (repeatActive && millis() - lastShoot >= (unsigned long)repeatInterval * 1000) {
         sendVolumeKey();
         lastShoot = millis();
+    }
+
+    if (digitalRead(0) == LOW) {
+        sendVolumeKey(); // send vol key if boot button is pressed
+        
+        while (digitalRead(0) == LOW); // debounce thing
+        delay(50); 
     }
 }
