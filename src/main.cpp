@@ -18,12 +18,13 @@ WebServer webServer(80);
 
 static const uint8_t VOLUME_UP_KEY = 0xE9;
 static const uint8_t VOLUME_DOWN_KEY = 0xEA;
-bool wasConnected = false;
 
-// used for non blocking webTakePhotoEveryX
-bool repeatActive = false;
-int repeatInterval = 0;
-unsigned long lastShoot = 0;
+int shootingInterval = 0;
+unsigned long lastShotTimestamp = 0;
+bool shootingPhoto = false;
+
+bool wasConnected = false;
+char message[200];
 
 // sets the rgb led
 void setLED(uint8_t r, uint8_t g, uint8_t b) {
@@ -81,41 +82,6 @@ void sendVolumeKey() {
     pulseLED(255, 255, 255, 50);
 }
 
-// take a photo with a delay (timer)
-void takePhotoWithDelay(int delaySec = 0) {
-    if (delaySec < 1) {
-        return; // invalid value
-    }
-
-    unsigned long start = millis();
-
-    while (millis() - start < (unsigned long)delaySec * 1000) {
-        checkConnectionState();
-        delay(50);
-    }
-
-    sendVolumeKey();
-}
-
-// takes a photo every x seconds
-void takePhotoEveryX(int shootDelay = 0) {
-    if (shootDelay < 1) {
-        return; // invalid value
-    }
-    
-    unsigned long last = 0;
-    while (true) {
-        checkConnectionState();
-
-        if (millis() - last >= (unsigned long)shootDelay * 1000) {
-            sendVolumeKey();
-            last = millis();
-        }
-
-        delay(50);
-    }
-}
-
 void setup() {
     pinMode(0, INPUT_PULLUP); // this is the boot button, gpio0
     
@@ -167,35 +133,53 @@ void setup() {
     WiFi.softAP("shitteremote");
 
     webServer.on("/", []() {
-        webServer.send(200, "text/plain", "Routes:\n /\t\t\t: this\n /shoot\t\t\t: take a single photo\n /takePhotoWithDelay\t: take a photo after x seconds\n /takePhotoEveryX\t: take a photo every x seconds\n /cancel\t\t: stop takePhotoEveryX\n\nPhoto can also be taken by pressing\nthe BOOT button on board.\n");
+        webServer.send(200, "text/plain", "                take a shot: /shoot\ntake a shot after x seconds: /shoot/after\ntake a shot every x seconds: /shoot/every\n     stop above task if ran: /shoot\n");
     });
 
     webServer.on("/shoot", []() {
         sendVolumeKey();
-        webServer.send(200, "text/plain", "sendVolumeKey | OK\n");
+        webServer.send(200, "text/plain", "[200] /shoot:\n  ok\n");
     });
 
-    webServer.on("/takePhotoWithDelay", []() {
-        takePhotoWithDelay(webServer.arg("delay").toInt());
-        webServer.send(200, "text/plain", "takePhotoWithDelay | OK\n");
+    webServer.on("/shoot/after", []() {
+        int interval = webServer.arg("interval").toInt();
+
+        if (interval < 1) {
+            snprintf(message, sizeof(message), "[400] /shoot/after:\n  invalid interval value: '%d'\n", interval);
+            webServer.send(400, "text/plain", message);
+            return;
+        }
+        
+        snprintf(message, sizeof(message), "[200] /shoot/after:\n  taking shot in %d seconds\n", interval);
+        webServer.send(200, "text/plain", message);
+    
+        delay(interval * 1000);
+        sendVolumeKey();
     });
 
-    webServer.on("/takePhotoEveryX", []() {
-        repeatInterval = webServer.arg("repeatEvery").toInt();
-        repeatActive = true;
-        lastShoot = millis();
-            
-        webServer.send(200, "text/plain", "takePhotoEveryX | START\n");
+    webServer.on("/shoot/every", []() {
+        int interval = webServer.arg("interval").toInt();
 
-        // code above looks confusing as shit right?
-        // well, the magic is happening in the loop
-        // function at the bottom
+        if (interval < 1) {
+            snprintf(message, sizeof(message), "[400] /shoot/every:\n  invalid interval value: '%d'\n", interval);
+            webServer.send(400, "text/plain", message);
+            return;
+        }
+        
+        snprintf(message, sizeof(message), "[200] /shoot/every:\n  taking shots every %d seconds\n  call /shoot/repeat/cancel\n  route to stop\n", interval);
+        webServer.send(200, "text/plain", message);
+
+        shootingPhoto = true;
+        shootingInterval = interval;
+        lastShotTimestamp = millis();
     });
 
-    // this is use(ful)d only for takePhotoEveryX
-    webServer.on("/cancel", []() {
-        repeatActive = false;
-        webServer.send(200, "text/plain", "takePhotoEveryX | STOP\n");
+    webServer.on("/shoot/every/cancel", []() {
+        shootingPhoto = false;
+        shootingInterval = 0;
+        lastShotTimestamp = 0;
+        
+        webServer.send(200, "text/plain", "[200] /shoot/repeat/cancel:\n  stopping shots\n");
     });
 
     // webServer.on("/", []() {
@@ -208,10 +192,13 @@ void loop() {
     checkConnectionState();
     webServer.handleClient();
 
-    // very important part for takePhotoEveryX and the route
-    if (repeatActive && millis() - lastShoot >= (unsigned long)repeatInterval * 1000) {
-        sendVolumeKey();
-        lastShoot = millis();
+    if (shootingPhoto) {
+        unsigned long now = millis();
+
+        if (now - lastShotTimestamp >= shootingInterval * 1000) {
+            sendVolumeKey();
+            lastShotTimestamp = now;
+        }
     }
 
     if (digitalRead(0) == LOW) {
